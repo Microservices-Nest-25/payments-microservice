@@ -1,13 +1,19 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import Stripe from 'stripe';
-import { envs } from 'src/config';
+import { envs, NATS_SERVICE } from 'src/config';
 import { PaymentSessionDto } from './dto/paymetn-session.dto';
 import { Request, Response } from 'express';
+import { ClientProxy } from '@nestjs/microservices';
 
 @Injectable()
 export class PaymentsService {
 
-    private readonly stripe = new Stripe( envs.stripeSecretKey);
+    private readonly logger: Logger = new Logger( PaymentsService.name );
+    private readonly stripe = new Stripe( envs.stripeSecretKey );
+
+    constructor(
+        @Inject(NATS_SERVICE) private readonly client: ClientProxy
+    ) {}
 
     async createPaymentSession( paymentSessionDto: PaymentSessionDto ) {
         const { currency, items, orderId } = paymentSessionDto;
@@ -35,15 +41,19 @@ export class PaymentsService {
             cancel_url: `${ envs.baseUrl }/payments/cancel`,
         });
 
-        return session;
+        return {
+            cancelUrl:  session.cancel_url,
+            successUrl: session.success_url,
+            url:        session.url,
+        };
     }
 
     webhook( req: Request, res: Response ) {
-        const sig = req.headers['stripe-signature'] as string;
+        const sig = req.headers['stripe-signature'] as any;
 
         let event: Stripe.Event;
 
-        const endpointSecret: string = envs.stripeEndpointSecret;
+        const endpointSecret: string = 'whsec_3jySmMXqK2HELzjNXYSX2yl975SZjq9L';
 
         try {
             event = this.stripe.webhooks.constructEvent(
@@ -58,7 +68,15 @@ export class PaymentsService {
 
         switch (event.type) {
             case 'charge.succeeded':
-                const orderId = event.data.object.metadata.orderId;    
+                const chargerSucceded = event.data.object;
+
+                const payload = {
+                    stripePaymentId: chargerSucceded.id,
+                    orderId: chargerSucceded.metadata.orderId,
+                    receiptUrl: chargerSucceded.receipt_url,
+                }
+
+                this.client.emit('payment.succeeded', payload);
 
                 break;
             default:

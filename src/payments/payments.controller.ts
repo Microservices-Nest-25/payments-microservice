@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Post, Req, Res } from '@nestjs/common';
+import { Controller, Get, Post, Req, Res } from '@nestjs/common';
 import { PaymentsService } from './payments.service';
 import { PaymentSessionDto } from './dto/paymetn-session.dto';
 import { Request, Response } from 'express';
+import { MessagePattern, Payload } from '@nestjs/microservices';
 
 @Controller('payments')
 export class PaymentsController {
@@ -9,9 +10,9 @@ export class PaymentsController {
     private readonly paymentsService: PaymentsService
   ) {}
 
-  @Post( 'session' )
+  @MessagePattern('create.payment.session')
   createPayment(
-    @Body() paymentSessionDto: PaymentSessionDto
+    @Payload() paymentSessionDto: PaymentSessionDto
   ) {
     return this.paymentsService.createPaymentSession( paymentSessionDto );
   }
@@ -36,6 +37,6 @@ export class PaymentsController {
   webhook(
     @Req() request: Request, @Res() response: Response
   ) {
-    this.paymentsService.webhook( request, response );
+    return this.paymentsService.webhook( request, response );
   } 
 }
